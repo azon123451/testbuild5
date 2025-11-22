@@ -57,6 +57,13 @@
     .admin-modal.show { display:flex; }
     .admin-content { background:white; width:100%; max-height:90dvh; border-radius:24px 24px 0 0; padding:20px; overflow-y:auto; }
     #adminJson { width:100%; height:260px; border:1px solid #ddd; border-radius:12px; padding:12px; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:13px; }
+    .admin-items-grid { display:flex; flex-direction:column; gap:14px; margin-top:12px; }
+    .admin-item-card { border:1px solid #eee; border-radius:16px; padding:14px; background:#fafafa; }
+    .admin-item-card h4 { margin:0 0 8px; font-size:16px; }
+    .admin-item-card label { display:block; font-size:13px; color:#555; margin-top:8px; }
+    .admin-item-card input,
+    .admin-item-card textarea { width:100%; padding:12px; border:1px solid #ddd; border-radius:12px; font-size:14px; }
+    .admin-item-card textarea { min-height:60px; resize:vertical; }
   </style>
 </head>
 <body>
@@ -125,6 +132,13 @@
       <button id="adminSaveServerBtn" class="pay-btn" style="background:#007bff;">Сохранить на сервер</button>
     </div>
     <textarea id="adminJson" placeholder='{"categories":[...]}'></textarea>
+
+    <h3 style="margin:16px 0 8px;">Быстрое редактирование каталога</h3>
+    <p style="margin:0 0 10px;color:#666;font-size:14px;">
+      Здесь можно менять названия, изображения, цены и вкусы прямо из интерфейса. Вкусы перечисляйте через запятую.
+    </p>
+    <div id="adminItemsEditor" class="admin-items-grid"></div>
+    <button id="adminItemsApplyBtn" class="pay-btn" style="margin-top:10px;">Сохранить изменения каталога</button>
 
     <button onclick="document.getElementById('adminModal').classList.remove('show')" style="margin-top:10px;padding:16px;background:#f0f0f0;border:none;border-radius:16px;width:100%;">Закрыть</button>
   </div>
@@ -242,6 +256,7 @@
     localStorage.setItem('catalogJson', JSON.stringify(data));
     renderMain();
     backToMain();
+    renderAdminItemsEditor();
   }
 
   function applyAppSettings() {
@@ -431,12 +446,14 @@
     // settings
     document.getElementById('appTitleInput').value = localStorage.getItem('appTitle') || 'НЕФТЬ';
     document.getElementById('appSubtitleInput').value = localStorage.getItem('appSubtitle') || 'Самовывоз • Доставка по городу';
+    renderAdminItemsEditor();
     document.getElementById('adminModal').classList.add('show');
   };
 
   document.getElementById('adminLoadCurrentBtn').onclick = () => {
     const current = buildCatalogJsonFromCategories();
     document.getElementById('adminJson').value = JSON.stringify(current, null, 2);
+    renderAdminItemsEditor();
   };
 
   document.getElementById('adminApplyBtn').onclick = () => {
@@ -482,6 +499,68 @@
   };
 
   document.getElementById('adminSaveServerBtn').onclick = () => {
+  function renderAdminItemsEditor() {
+    const editor = document.getElementById('adminItemsEditor');
+    if (!editor) return;
+    if (!categories || Object.keys(categories).length === 0) {
+      editor.innerHTML = '<p style="color:#777;">Каталог пуст. Добавьте категории через JSON.</p>';
+      return;
+    }
+    const html = Object.keys(categories).map(cat => {
+      const items = categories[cat] || [];
+      const itemsHtml = items.map((item, idx) => `
+        <div class="admin-item-card" data-cat="${cat}" data-idx="${idx}">
+          <h4>${cat} • ${item.name || 'Товар'}</h4>
+          <label>Название</label>
+          <input class="admin-item-input" data-field="name" value="${item.name || ''}">
+          <label>Цена (₽)</label>
+          <input class="admin-item-input" data-field="price" type="number" step="1" value="${item.price ?? 0}">
+          <label>Ссылка на изображение</label>
+          <input class="admin-item-input" data-field="img" value="${item.img || ''}">
+          <label>Вкусы (через запятую)</label>
+          <textarea class="admin-item-input" data-field="variants">${(item.variants || []).join(', ')}</textarea>
+        </div>
+      `).join('');
+      return `<div><h3 style="margin:16px 0 8px;">${cat}</h3>${itemsHtml}</div>`;
+    }).join('');
+    editor.innerHTML = html;
+  }
+
+  function applyAdminItemsEditor() {
+    const cards = document.querySelectorAll('.admin-item-card');
+    if (!cards.length) return;
+    cards.forEach(card => {
+      const cat = card.dataset.cat;
+      const idx = Number(card.dataset.idx);
+      if (!categories[cat] || !categories[cat][idx]) return;
+      const target = categories[cat][idx];
+      card.querySelectorAll('.admin-item-input').forEach(input => {
+        const field = input.dataset.field;
+        if (field === 'variants') {
+          target.variants = input.value
+            .split(',')
+            .map(v => v.trim())
+            .filter(Boolean);
+        } else if (field === 'price') {
+          const num = Number(input.value);
+          target.price = Number.isFinite(num) ? num : target.price;
+        } else if (field === 'img') {
+          target.img = input.value.trim();
+        } else if (field === 'name') {
+          target.name = input.value.trim() || target.name;
+        }
+      });
+    });
+    const json = JSON.stringify(buildCatalogJsonFromCategories(), null, 2);
+    localStorage.setItem('catalogJson', json);
+    const area = document.getElementById('adminJson');
+    if (area) area.value = json;
+    renderMain();
+    tg.HapticFeedback?.impactOccurred('medium');
+    tg.showPopup?.({ title:"Сохранено", message:"Каталог обновлён локально.", buttons:[{type:'ok'}] });
+  }
+
+  document.getElementById('adminItemsApplyBtn').onclick = applyAdminItemsEditor;
     try {
       const text = document.getElementById('adminJson').value || JSON.stringify(buildCatalogJsonFromCategories(), null, 2);
       const parsed = JSON.parse(text);
