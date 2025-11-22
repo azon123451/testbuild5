@@ -795,15 +795,21 @@
         a.remove();
       }, 0);
 
-      tg.sendData(
-        JSON.stringify({ action: "catalog_export", catalog: parsed })
-      );
+      try {
+        tg.sendData(
+          JSON.stringify({ action: "catalog_export", catalog: parsed })
+        );
+      } catch (sendErr) {
+        console.warn("Не удалось отправить каталог боту:", sendErr);
+      }
+
       tg.showPopup?.({
         title: "Экспорт каталога",
-        message: "Файл скачан. Если вы на телефоне и загрузка не началась, мы отправим его в чат с ботом.",
+        message: "Файл скачан. Если загрузка не началась, каталог всё равно отправлен в чат бота.",
         buttons: [{ type: 'ok' }],
       });
     } catch (e) {
+      console.error(e);
       tg.showPopup?.({
         title: "Ошибка",
         message: "Не удалось подготовить каталог к экспорту.",
