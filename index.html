@@ -560,7 +560,10 @@
     tg.showPopup?.({ title:"Сохранено", message:"Каталог обновлён локально.", buttons:[{type:'ok'}] });
   }
 
-  document.getElementById('adminItemsApplyBtn').onclick = applyAdminItemsEditor;
+  const adminItemsApplyBtn = document.getElementById('adminItemsApplyBtn');
+  if (adminItemsApplyBtn) {
+    adminItemsApplyBtn.onclick = applyAdminItemsEditor;
+  }
     try {
       const text = document.getElementById('adminJson').value || JSON.stringify(buildCatalogJsonFromCategories(), null, 2);
       const parsed = JSON.parse(text);
