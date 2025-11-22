@@ -280,12 +280,13 @@
     } catch (e) {}
   }
 
-  function afterVisualChange() {
+  function afterVisualChange(options = {}) {
+    const { rerenderVisual = true } = options;
     syncAdminJsonFromCategories();
     persistCatalogToLocalStorage();
     renderMain();
     backToMain();
-    if (visualEditorEnabled) {
+    if (visualEditorEnabled && rerenderVisual) {
       renderVisualEditor();
     }
   }
@@ -303,7 +304,7 @@
     const data = categories[oldTitle];
     delete categories[oldTitle];
     categories[safeTitle] = data;
-    afterVisualChange();
+    afterVisualChange({ rerenderVisual: false });
   }
 
   function removeCategory(index) {
@@ -338,7 +339,7 @@
       variants: ['Стандарт']
     });
     categories[key] = list;
-    afterVisualChange();
+    afterVisualChange({ rerenderVisual: false });
   }
 
   function removeItem(catIndex, itemIndex) {
