@@ -170,6 +170,13 @@
   let categories = null;
   let visualEditorEnabled = false;
   const CATALOG_URL = window.CATALOG_URL || 'catalog.json';
+  const PLACEHOLDER_IMAGE = 'https://placehold.co/240x140?text=Image';
+
+  const galleryInput = document.createElement('input');
+  galleryInput.type = 'file';
+  galleryInput.accept = 'image/*';
+  galleryInput.style.display = 'none';
+  document.body.appendChild(galleryInput);
   const ADMIN_IDS = [521962367]; // Viktor (@azon2701)
   const isAdmin = (() => {
     try {
@@ -187,6 +194,23 @@
     }
   })();
 
+  function requestGalleryImage(resultCallback) {
+    galleryInput.onchange = (ev) => {
+      const file = ev.target.files?.[0];
+      if (!file) {
+        galleryInput.value = '';
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        resultCallback(reader.result);
+        galleryInput.value = '';
+      };
+      reader.readAsDataURL(file);
+    };
+    galleryInput.click();
+  }
+
   async function loadCatalog() {
     try {
       const res = await fetch(`${CATALOG_URL}?t=${Date.now()}`, { cache: 'no-store' });
@@ -195,12 +219,15 @@
       const mapped = {};
       for (const cat of data.categories ?? []) {
         const title = (cat.title || cat.id || 'Категория').toString();
-        mapped[title] = (cat.items || []).map(i => ({
-          name: i.name,
-          price: i.price,
-          img: i.image,
-          variants: i.variants
-        }));
+        mapped[title] = {
+          image: cat.image || '',
+          items: (cat.items || []).map(i => ({
+            name: i.name,
+            price: i.price,
+            img: i.image,
+            variants: i.variants
+          }))
+        };
       }
       return mapped;
     } catch (e) {
@@ -239,11 +266,12 @@
     const out = { categories: [] };
     const catTitles = Object.keys(categories || {});
     for (const title of catTitles) {
-      const items = categories[title] || [];
+      const data = categories[title] || { image: '', items: [] };
+      const items = data.items || [];
       out.categories.push({
         id: slugify(title),
         title,
-        image: (items[0] && items[0].img) || "",
+        image: data.image || "",
         items: items.map(i => ({
           id: slugify(i.name),
           name: i.name,
@@ -298,6 +326,39 @@
     afterVisualChange({ rerenderVisual: false });
   }
 
+  function updateCategoryImageUrl(index, value) {
+    const titles = getCategoryTitles();
+    const key = titles[index];
+    if (!key) return;
+    if (!categories[key]) {
+      categories[key] = { image: '', items: [] };
+    }
+    categories[key].image = value;
+    afterVisualChange({ rerenderVisual: false });
+  }
+
+  function uploadCategoryImage(index) {
+    const titles = getCategoryTitles();
+    const key = titles[index];
+    if (!key) return;
+    requestGalleryImage((dataUrl) => {
+      if (!categories[key]) {
+        categories[key] = { image: '', items: [] };
+      }
+      categories[key].image = dataUrl;
+      afterVisualChange();
+    });
+  }
+
+  function uploadItemImage(catIndex, itemIndex) {
+    const entry = getCategoryEntry(catIndex);
+    if (!entry) return;
+    requestGalleryImage((dataUrl) => {
+      updateItemField(catIndex, itemIndex, 'img', dataUrl);
+      renderVisualEditor();
+    });
+  }
+
   function removeCategory(index) {
     const titles = getCategoryTitles();
     const key = titles[index];
@@ -314,41 +375,52 @@
     while (categories && Object.prototype.hasOwnProperty.call(categories, title)) {
       title = `${base} ${counter++}`;
     }
-    categories = { ...(categories || {}), [title]: [] };
+    categories = {
+      ...(categories || {}),
+      [title]: { image: '', items: [] }
+    };
     afterVisualChange();
   }
 
-  function addItemToCategory(catIndex) {
+  function getCategoryEntry(catIndex) {
     const titles = getCategoryTitles();
     const key = titles[catIndex];
-    if (!key) return;
-    const list = categories[key] || [];
-    list.push({
+    if (!key) return null;
+    if (!categories[key]) {
+      categories[key] = { image: '', items: [] };
+    }
+    return { key, data: categories[key] };
+  }
+
+  function addItemToCategory(catIndex) {
+    const entry = getCategoryEntry(catIndex);
+    if (!entry) return;
+    entry.data.items = entry.data.items || [];
+    entry.data.items.push({
       name: 'Новый товар',
       price: 0,
       img: '',
       variants: ['Стандарт']
     });
-    categories[key] = list;
-    afterVisualChange({ rerenderVisual: false });
+    categories[entry.key] = entry.data;
+    afterVisualChange();
   }
 
   function removeItem(catIndex, itemIndex) {
-    const titles = getCategoryTitles();
-    const key = titles[catIndex];
-    if (!key) return;
-    const list = categories[key] || [];
+    const entry = getCategoryEntry(catIndex);
+    if (!entry) return;
+    const list = entry.data.items || [];
     if (!list[itemIndex]) return;
     list.splice(itemIndex, 1);
-    categories[key] = list;
+    entry.data.items = list;
+    categories[entry.key] = entry.data;
     afterVisualChange();
   }
 
   function updateItemField(catIndex, itemIndex, field, value) {
-    const titles = getCategoryTitles();
-    const key = titles[catIndex];
-    if (!key) return;
-    const list = categories[key] || [];
+    const entry = getCategoryEntry(catIndex);
+    if (!entry) return;
+    const list = entry.data.items || [];
     const item = list[itemIndex];
     if (!item) return;
     if (field === 'price') {
@@ -361,8 +433,9 @@
     } else {
       item[field] = value;
     }
-    categories[key] = list;
-    afterVisualChange();
+    entry.data.items = list;
+    categories[entry.key] = entry.data;
+    afterVisualChange({ rerenderVisual: false });
   }
 
   function renderVisualEditor() {
@@ -382,7 +455,9 @@
     }
     const blocks = titles
       .map((title, catIndex) => {
-        const items = categories[title] || [];
+        const catData = categories[title] || { image: '', items: [] };
+        const items = catData.items || [];
+        const categoryImage = catData.image || PLACEHOLDER_IMAGE;
         const itemsMarkup = items
           .map(
             (item, itemIndex) => `
@@ -397,6 +472,7 @@
                 <input type="number" value="${item.price}" oninput="updateItemField(${catIndex}, ${itemIndex}, 'price', this.value)">
                 <label>Ссылка на изображение</label>
                 <input value="${escapeHtml(item.img || '')}" oninput="updateItemField(${catIndex}, ${itemIndex}, 'img', this.value)">
+                <button class="ve-btn-add" style="margin-top:6px;width:100%;" onclick="uploadItemImage(${catIndex}, ${itemIndex})">Загрузить изображение из галереи</button>
                 <label>Варианты (через запятую)</label>
                 <textarea rows="2" oninput="updateItemField(${catIndex}, ${itemIndex}, 'variants', this.value)">${escapeHtml((item.variants || []).join(', '))}</textarea>
               </div>
@@ -411,6 +487,14 @@
             </header>
             <label style="display:block;margin-top:8px;">Название категории</label>
             <input value="${escapeHtml(title)}" oninput="updateCategoryTitle(${catIndex}, this.value)">
+            <div style="display:flex; gap:12px; align-items:center; margin-top:10px; flex-wrap:wrap;">
+              <img src="${escapeHtml(categoryImage)}" style="width:160px;height:100px;object-fit:cover;border-radius:12px;background:#eee;">
+              <div style="flex:1;min-width:200px;">
+                <label>Ссылка на изображение категории</label>
+                <input value="${escapeHtml(catData.image || '')}" oninput="updateCategoryImageUrl(${catIndex}, this.value)">
+                <button class="ve-btn-add" style="margin-top:6px;width:100%;" onclick="uploadCategoryImage(${catIndex})">Загрузить изображение из галереи</button>
+              </div>
+            </div>
             <div class="ve-items">
               ${itemsMarkup || '<p style="color:#666;">Товаров пока нет.</p>'}
             </div>
@@ -443,12 +527,15 @@
     const mapped = {};
     for (const cat of data.categories ?? []) {
       const title = (cat.title || cat.id || 'Категория').toString();
-      mapped[title] = (cat.items || []).map(i => ({
-        name: i.name,
-        price: i.price,
-        img: i.image,
-        variants: i.variants
-      }));
+      mapped[title] = {
+        image: cat.image || '',
+        items: (cat.items || []).map(i => ({
+          name: i.name,
+          price: i.price,
+          img: i.image,
+          variants: i.variants
+        }))
+      };
     }
     categories = mapped;
     renderMain();
@@ -481,22 +568,30 @@
   })();
 
   function renderMain() {
-    document.getElementById('mainCategories').innerHTML = Object.keys(categories).map(cat => `
-      <div class="cat-card" onclick="openCategory('${cat}')">
-        <img src="${categories[cat][0].img}" class="cat-img">
-        <div class="cat-title">${cat}</div>
-      </div>
-    `).join('');
+    const cats = Object.keys(categories || {});
+    document.getElementById('mainCategories').innerHTML = cats.map(cat => {
+      const data = categories[cat] || { image: '', items: [] };
+      const previewImg =
+        data.image || (data.items && data.items[0] && data.items[0].img) || PLACEHOLDER_IMAGE;
+      return `
+        <div class="cat-card" onclick="openCategory('${cat.replace(/'/g, "\\'")}')">
+          <img src="${escapeHtml(previewImg)}" class="cat-img">
+          <div class="cat-title">${escapeHtml(cat)}</div>
+        </div>
+      `;
+    }).join('');
   }
 
   function openCategory(cat) {
+    const data = categories[cat] || { items: [] };
+    const list = data.items || [];
     document.getElementById('mainCategories').style.display = 'none';
     document.getElementById('productList').style.display = 'block';
     document.getElementById('productList').innerHTML = `
       <h2 style="padding:20px 20px 0;text-align:center;font-weight:900;font-size:28px;">${cat}</h2>
-      <div class="products">${categories[cat].map((p,i) => `
+      <div class="products">${list.map((p,i) => `
         <div class="product-card">
-          <img src="${p.img}" class="product-img" onclick="openDetail('${cat}',${i})">
+          <img src="${p.img || PLACEHOLDER_IMAGE}" class="product-img" onclick="openDetail('${cat}',${i})">
           <div class="product-info">
             <div class="product-name" onclick="openDetail('${cat}',${i})">${p.name}</div>
             <div class="product-price">${p.price} ₽</div>
@@ -514,7 +609,8 @@
   }
 
   function openDetail(cat, idx) {
-    const p = categories[cat][idx];
+    const data = categories[cat] || { items: [] };
+    const p = data.items[idx];
     document.getElementById('productDetail').style.display = 'block';
     document.getElementById('productList').style.display = 'none';
     document.getElementById('productDetail').innerHTML = `
@@ -530,7 +626,8 @@
 
   function selectVariant(cat, idx) {
     currentProduct = {cat, idx};
-    const p = categories[cat][idx];
+    const data = categories[cat] || { items: [] };
+    const p = data.items[idx];
     if (p.variants && p.variants.length > 1) {
       document.getElementById('variantsList').innerHTML = p.variants.map(v => `
         <div class="variant-btn" onclick="addToCart('${v}')">${v}</div>
@@ -542,7 +639,8 @@
   }
 
   function addToCart(variant) {
-    const p = categories[currentProduct.cat][currentProduct.idx];
+    const data = categories[currentProduct.cat] || { items: [] };
+    const p = data.items[currentProduct.idx];
     const existing = cart.find(i => i.name === p.name && i.variant === variant);
     if (existing) existing.qty += 1;
     else cart.push({name: p.name, variant, price: p.price, qty: 1});
