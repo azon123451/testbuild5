@@ -57,6 +57,20 @@
     .admin-modal.show { display:flex; }
     .admin-content { background:white; width:100%; max-height:90dvh; border-radius:24px 24px 0 0; padding:20px; overflow-y:auto; }
     #adminJson { width:100%; height:260px; border:1px solid #ddd; border-radius:12px; padding:12px; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:13px; }
+    .admin-toggle { display:flex; align-items:center; gap:10px; margin:4px 0 12px; }
+    .admin-toggle input { width:20px; height:20px; }
+    #visualEditor { display:none; background:#f7f7f7; padding:14px; border-radius:16px; margin-bottom:16px; max-height:60vh; overflow-y:auto; }
+    .ve-category { background:white; border-radius:14px; box-shadow:0 2px 8px rgba(0,0,0,0.08); padding:12px; margin-bottom:12px; }
+    .ve-category header { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+    .ve-category input { width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; font-size:15px; margin-top:8px; }
+    .ve-items { margin-top:10px; }
+    .ve-item { border:1px solid #eee; border-radius:12px; padding:10px; margin-bottom:10px; background:#fafafa; }
+    .ve-item label { display:block; font-size:13px; color:#555; margin:6px 0 2px; }
+    .ve-item input, .ve-item textarea { width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; font-size:14px; }
+    .ve-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+    .ve-actions button { flex:1; padding:12px; border:none; border-radius:12px; font-weight:bold; }
+    .ve-btn-danger { background:#ffebee; color:#d32f2f; }
+    .ve-btn-add { background:#000; color:white; }
   </style>
 </head>
 <body>
@@ -114,17 +128,25 @@
       <button id="adminSaveSettingsBtn" class="pay-btn" style="margin-top:6px;">Сохранить настройки</button>
     </div>
 
-    <h3 style="margin:10px 0;">Редактор каталога (JSON)</h3>
-    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
-      <button id="adminLoadCurrentBtn" style="padding:10px 14px;border:none;border-radius:12px;background:#eee;">Загрузить текущий</button>
-      <label style="padding:10px 14px;border:none;border-radius:12px;background:#eee;cursor:pointer;">
-        Импорт JSON <input id="adminImportFile" type="file" accept="application/json" style="display:none;">
-      </label>
-      <button id="adminApplyBtn" class="pay-btn" style="flex:1; margin:0;">Применить</button>
-      <button id="adminExportBtn" style="padding:10px 14px;border:none;border-radius:12px;background:#eee;">Экспорт JSON</button>
-      <button id="adminSaveServerBtn" class="pay-btn" style="background:#007bff;">Сохранить на сервер</button>
+    <h3 style="margin:10px 0;">Редактор каталога</h3>
+    <div class="admin-toggle">
+      <input type="checkbox" id="visualEditorToggle">
+      <label for="visualEditorToggle" style="margin:0;font-weight:600;">Включить визуальный редактор</label>
     </div>
-    <textarea id="adminJson" placeholder='{"categories":[...]}'></textarea>
+    <small style="display:block;margin-bottom:12px;color:#666;">Визуальный режим позволит изменять категории и товары без правки JSON. При отключении остаётся режим текста.</small>
+    <div id="visualEditor"></div>
+    <div id="adminJsonWrapper">
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+        <button id="adminLoadCurrentBtn" style="padding:10px 14px;border:none;border-radius:12px;background:#eee;">Загрузить текущий</button>
+        <label style="padding:10px 14px;border:none;border-radius:12px;background:#eee;cursor:pointer;">
+          Импорт JSON <input id="adminImportFile" type="file" accept="application/json" style="display:none;">
+        </label>
+        <button id="adminApplyBtn" class="pay-btn" style="flex:1; margin:0;">Применить</button>
+        <button id="adminExportBtn" style="padding:10px 14px;border:none;border-radius:12px;background:#eee;">Экспорт JSON</button>
+        <button id="adminSaveServerBtn" class="pay-btn" style="background:#007bff;">Сохранить на сервер</button>
+      </div>
+      <textarea id="adminJson" placeholder='{"categories":[...]}'></textarea>
+    </div>
 
     <button onclick="document.getElementById('adminModal').classList.remove('show')" style="margin-top:10px;padding:16px;background:#f0f0f0;border:none;border-radius:16px;width:100%;">Закрыть</button>
   </div>
@@ -146,6 +168,7 @@
   let cart = JSON.parse(localStorage.getItem('cart') || '[]');
   let currentProduct = null;
   let categories = null;
+  let visualEditorEnabled = false;
   const ADMIN_IDS = [521962367]; // Viktor (@azon2701)
   const isAdmin = (() => {
     try {
@@ -232,6 +255,197 @@
     return out;
   }
 
+  function escapeHtml(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function syncAdminJsonFromCategories() {
+    const area = document.getElementById('adminJson');
+    if (area) {
+      area.value = JSON.stringify(buildCatalogJsonFromCategories(), null, 2);
+    }
+  }
+
+  function persistCatalogToLocalStorage() {
+    try {
+      localStorage.setItem(
+        'catalogJson',
+        JSON.stringify(buildCatalogJsonFromCategories())
+      );
+    } catch (e) {}
+  }
+
+  function afterVisualChange() {
+    syncAdminJsonFromCategories();
+    persistCatalogToLocalStorage();
+    renderMain();
+    backToMain();
+    if (visualEditorEnabled) {
+      renderVisualEditor();
+    }
+  }
+
+  function getCategoryTitles() {
+    return Object.keys(categories || {});
+  }
+
+  function updateCategoryTitle(index, value) {
+    const titles = getCategoryTitles();
+    const oldTitle = titles[index];
+    if (!oldTitle) return;
+    const safeTitle = value.trim() || 'Категория';
+    if (safeTitle === oldTitle) return;
+    const data = categories[oldTitle];
+    delete categories[oldTitle];
+    categories[safeTitle] = data;
+    afterVisualChange();
+  }
+
+  function removeCategory(index) {
+    const titles = getCategoryTitles();
+    const key = titles[index];
+    if (!key) return;
+    if (!confirm(`Удалить категорию «${key}»?`)) return;
+    delete categories[key];
+    afterVisualChange();
+  }
+
+  function addCategory() {
+    let base = 'Новая категория';
+    let title = base;
+    let counter = 1;
+    while (categories && Object.prototype.hasOwnProperty.call(categories, title)) {
+      title = `${base} ${counter++}`;
+    }
+    categories = { ...(categories || {}), [title]: [] };
+    afterVisualChange();
+  }
+
+  function addItemToCategory(catIndex) {
+    const titles = getCategoryTitles();
+    const key = titles[catIndex];
+    if (!key) return;
+    const list = categories[key] || [];
+    list.push({
+      name: 'Новый товар',
+      price: 0,
+      img: '',
+      variants: ['Стандарт']
+    });
+    categories[key] = list;
+    afterVisualChange();
+  }
+
+  function removeItem(catIndex, itemIndex) {
+    const titles = getCategoryTitles();
+    const key = titles[catIndex];
+    if (!key) return;
+    const list = categories[key] || [];
+    if (!list[itemIndex]) return;
+    list.splice(itemIndex, 1);
+    categories[key] = list;
+    afterVisualChange();
+  }
+
+  function updateItemField(catIndex, itemIndex, field, value) {
+    const titles = getCategoryTitles();
+    const key = titles[catIndex];
+    if (!key) return;
+    const list = categories[key] || [];
+    const item = list[itemIndex];
+    if (!item) return;
+    if (field === 'price') {
+      item[field] = Number(value) || 0;
+    } else if (field === 'variants') {
+      item[field] = value
+        .split(',')
+        .map(v => v.trim())
+        .filter(Boolean);
+    } else {
+      item[field] = value;
+    }
+    categories[key] = list;
+    afterVisualChange();
+  }
+
+  function renderVisualEditor() {
+    const container = document.getElementById('visualEditor');
+    if (!container) return;
+    if (!visualEditorEnabled) {
+      container.innerHTML = '';
+      return;
+    }
+    const titles = getCategoryTitles();
+    if (!titles.length) {
+      container.innerHTML = `
+        <p style="margin-bottom:12px;">Каталог пуст. Добавьте первую категорию.</p>
+        <button class="ve-btn-add" style="width:100%;" onclick="addCategory()">Добавить категорию</button>
+      `;
+      return;
+    }
+    const blocks = titles
+      .map((title, catIndex) => {
+        const items = categories[title] || [];
+        const itemsMarkup = items
+          .map(
+            (item, itemIndex) => `
+              <div class="ve-item">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <strong>${item.name || 'Товар'}</strong>
+                  <button class="ve-btn-danger" style="padding:6px 10px;" onclick="removeItem(${catIndex}, ${itemIndex})">Удалить</button>
+                </div>
+                <label>Название</label>
+                <input value="${escapeHtml(item.name)}" oninput="updateItemField(${catIndex}, ${itemIndex}, 'name', this.value)">
+                <label>Цена</label>
+                <input type="number" value="${item.price}" oninput="updateItemField(${catIndex}, ${itemIndex}, 'price', this.value)">
+                <label>Ссылка на изображение</label>
+                <input value="${escapeHtml(item.img || '')}" oninput="updateItemField(${catIndex}, ${itemIndex}, 'img', this.value)">
+                <label>Варианты (через запятую)</label>
+                <textarea rows="2" oninput="updateItemField(${catIndex}, ${itemIndex}, 'variants', this.value)">${escapeHtml((item.variants || []).join(', '))}</textarea>
+              </div>
+            `
+          )
+          .join('');
+        return `
+          <div class="ve-category">
+            <header>
+              <h4 style="margin:0;">Категория ${catIndex + 1}</h4>
+              <button class="ve-btn-danger" onclick="removeCategory(${catIndex})">Удалить категорию</button>
+            </header>
+            <label style="display:block;margin-top:8px;">Название категории</label>
+            <input value="${escapeHtml(title)}" oninput="updateCategoryTitle(${catIndex}, this.value)">
+            <div class="ve-items">
+              ${itemsMarkup || '<p style="color:#666;">Товаров пока нет.</p>'}
+            </div>
+            <button class="ve-btn-add" style="width:100%;" onclick="addItemToCategory(${catIndex})">Добавить товар</button>
+          </div>
+        `;
+      })
+      .join('');
+    container.innerHTML = `
+      ${blocks}
+      <button class="ve-btn-add" style="width:100%;margin-top:10px;" onclick="addCategory()">Добавить категорию</button>
+    `;
+  }
+
+  function toggleVisualEditor(enabled) {
+    visualEditorEnabled = enabled;
+    const visual = document.getElementById('visualEditor');
+    const jsonWrapper = document.getElementById('adminJsonWrapper');
+    if (visual) visual.style.display = enabled ? 'block' : 'none';
+    if (jsonWrapper) jsonWrapper.style.display = enabled ? 'none' : 'block';
+    if (enabled) {
+      renderVisualEditor();
+    } else {
+      syncAdminJsonFromCategories();
+    }
+  }
+
   function applyCatalogJsonText(text) {
     const data = JSON.parse(text);
     const mapped = {};
@@ -248,6 +462,10 @@
     localStorage.setItem('catalogJson', JSON.stringify(data));
     renderMain();
     backToMain();
+    syncAdminJsonFromCategories();
+    if (visualEditorEnabled) {
+      renderVisualEditor();
+    }
   }
 
   function applyAppSettings() {
@@ -272,6 +490,7 @@
     applyAppSettings();
     renderMain();
     updateCart();
+    syncAdminJsonFromCategories();
     if (isAdmin) {
       document.getElementById('adminFab').style.display = 'flex';
     }
@@ -503,6 +722,13 @@
       tg.showPopup?.({ title:"Ошибка", message:"Неверный JSON", buttons:[{type:'ok'}] });
     }
   };
+
+  const visualToggleEl = document.getElementById('visualEditorToggle');
+  if (visualToggleEl) {
+    visualToggleEl.addEventListener('change', (ev) => {
+      toggleVisualEditor(ev.target.checked);
+    });
+  }
 
   // Инициализация происходит после загрузки каталога (см. выше)
 </script>
