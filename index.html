@@ -169,6 +169,7 @@
   let currentProduct = null;
   let categories = null;
   let visualEditorEnabled = false;
+  const CATALOG_URL = window.CATALOG_URL || 'catalog.json';
   const ADMIN_IDS = [521962367]; // Viktor (@azon2701)
   const isAdmin = (() => {
     try {
@@ -188,7 +189,7 @@
 
   async function loadCatalog() {
     try {
-      const res = await fetch('catalog.json', { cache: 'no-store' });
+      const res = await fetch(`${CATALOG_URL}?t=${Date.now()}`, { cache: 'no-store' });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
       const mapped = {};
@@ -271,19 +272,9 @@
     }
   }
 
-  function persistCatalogToLocalStorage() {
-    try {
-      localStorage.setItem(
-        'catalogJson',
-        JSON.stringify(buildCatalogJsonFromCategories())
-      );
-    } catch (e) {}
-  }
-
   function afterVisualChange(options = {}) {
     const { rerenderVisual = true } = options;
     syncAdminJsonFromCategories();
-    persistCatalogToLocalStorage();
     renderMain();
     backToMain();
     if (visualEditorEnabled && rerenderVisual) {
@@ -460,7 +451,6 @@
       }));
     }
     categories = mapped;
-    localStorage.setItem('catalogJson', JSON.stringify(data));
     renderMain();
     backToMain();
     syncAdminJsonFromCategories();
@@ -481,13 +471,6 @@
 
   (async () => {
     categories = await loadCatalog();
-    // Если ранее применяли изменения через админку — загрузим их
-    try {
-      const saved = localStorage.getItem('catalogJson');
-      if (saved) {
-        applyCatalogJsonText(saved);
-      }
-    } catch(e) {}
     applyAppSettings();
     renderMain();
     updateCart();
