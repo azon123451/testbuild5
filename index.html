@@ -499,6 +499,22 @@
   };
 
   document.getElementById('adminSaveServerBtn').onclick = () => {
+    try {
+      const text = document.getElementById('adminJson').value || JSON.stringify(buildCatalogJsonFromCategories(), null, 2);
+      const parsed = JSON.parse(text);
+      // Минифицируем, чтобы уменьшить payload
+      const min = JSON.stringify({ action: "catalog_update", catalog: parsed });
+      if (min.length > 4000) {
+        tg.showPopup?.({ title:"Слишком большой JSON", message:"Уменьшите каталог перед отправкой", buttons:[{type:'ok'}] });
+        return;
+      }
+      tg.sendData(min);
+      tg.showPopup?.({ title:"Отправлено", message:"Запрос на обновление отправлен боту", buttons:[{type:'ok'}] });
+    } catch(e) {
+      tg.showPopup?.({ title:"Ошибка", message:"Неверный JSON", buttons:[{type:'ok'}] });
+    }
+  };
+
   function renderAdminItemsEditor() {
     const editor = document.getElementById('adminItemsEditor');
     if (!editor) return;
@@ -564,21 +580,6 @@
   if (adminItemsApplyBtn) {
     adminItemsApplyBtn.onclick = applyAdminItemsEditor;
   }
-    try {
-      const text = document.getElementById('adminJson').value || JSON.stringify(buildCatalogJsonFromCategories(), null, 2);
-      const parsed = JSON.parse(text);
-      // Минифицируем, чтобы уменьшить payload
-      const min = JSON.stringify({ action: "catalog_update", catalog: parsed });
-      if (min.length > 4000) {
-        tg.showPopup?.({ title:"Слишком большой JSON", message:"Уменьшите каталог перед отправкой", buttons:[{type:'ok'}] });
-        return;
-      }
-      tg.sendData(min);
-      tg.showPopup?.({ title:"Отправлено", message:"Запрос на обновление отправлен боту", buttons:[{type:'ok'}] });
-    } catch(e) {
-      tg.showPopup?.({ title:"Ошибка", message:"Неверный JSON", buttons:[{type:'ok'}] });
-    }
-  };
 
   // Инициализация происходит после загрузки каталога (см. выше)
 </script>
