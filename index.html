@@ -177,7 +177,15 @@
   galleryInput.accept = 'image/*';
   galleryInput.style.display = 'none';
   document.body.appendChild(galleryInput);
-  const ADMIN_IDS = [521962367]; // Viktor (@azon2701)
+  const adminIdsParam = tg?.initDataUnsafe?.start_param || '';
+  // Позволяет передать список ID через start_param (через запятую)
+  const extraAdminIds = adminIdsParam
+    .split(',')
+    .map(v => Number.parseInt(v, 10))
+    .filter(v => Number.isInteger(v));
+  const ADMIN_IDS = Array.from(
+    new Set([521962367, 6494112082, ...extraAdminIds])
+  ); // базовые ID + переданные
   const isAdmin = (() => {
     try {
       const uidRaw =
