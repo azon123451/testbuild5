@@ -766,14 +766,50 @@
   };
 
   document.getElementById('adminExportBtn').onclick = () => {
-    const text = document.getElementById('adminJson').value || JSON.stringify(buildCatalogJsonFromCategories(), null, 2);
-    const blob = new Blob([text], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'catalog.json';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    try {
+      const currentText = document.getElementById('adminJson').value;
+      let parsed;
+      if (currentText) {
+        try {
+          parsed = JSON.parse(currentText);
+        } catch (e) {
+          tg.showPopup?.({
+            title: "Ошибка",
+            message: "JSON с каталогом повреждён. Исправьте или используйте визуальный редактор.",
+            buttons: [{ type: 'ok' }],
+          });
+          return;
+        }
+      } else {
+        parsed = buildCatalogJsonFromCategories();
+      }
+      const pretty = JSON.stringify(parsed, null, 2);
+      const blob = new Blob([pretty], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'catalog.json';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        URL.revokeObjectURL(a.href);
+        a.remove();
+      }, 0);
+
+      tg.sendData(
+        JSON.stringify({ action: "catalog_export", catalog: parsed })
+      );
+      tg.showPopup?.({
+        title: "Экспорт каталога",
+        message: "Файл скачан. Если вы на телефоне и загрузка не началась, мы отправим его в чат с ботом.",
+        buttons: [{ type: 'ok' }],
+      });
+    } catch (e) {
+      tg.showPopup?.({
+        title: "Ошибка",
+        message: "Не удалось подготовить каталог к экспорту.",
+        buttons: [{ type: 'ok' }],
+      });
+    }
   };
 
   document.getElementById('adminImportFile').addEventListener('change', (ev) => {
