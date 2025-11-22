@@ -149,7 +149,13 @@
   const ADMIN_IDS = [521962367]; // Viktor (@azon2701)
   const isAdmin = (() => {
     try {
-      const uid = tg?.initDataUnsafe?.user?.id;
+      const uidRaw =
+        tg?.initDataUnsafe?.user?.id ?? tg?.initData?.user?.id ?? null;
+      const uid =
+        typeof uidRaw === "string" ? Number.parseInt(uidRaw, 10) : uidRaw;
+      if (!Number.isInteger(uid)) {
+        return false;
+      }
       const byId = Array.isArray(ADMIN_IDS) && ADMIN_IDS.includes(uid);
       return Boolean(byId);
     } catch(e) {
