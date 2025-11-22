@@ -142,6 +142,7 @@
           Импорт JSON <input id="adminImportFile" type="file" accept="application/json" style="display:none;">
         </label>
         <button id="adminApplyBtn" class="pay-btn" style="flex:1; margin:0;">Применить</button>
+        <button id="adminCopyJsonBtn" style="padding:10px 14px;border:none;border-radius:12px;background:#eee;">Копировать JSON</button>
         <button id="adminExportBtn" style="padding:10px 14px;border:none;border-radius:12px;background:#eee;">Экспорт JSON</button>
         <button id="adminSaveServerBtn" class="pay-btn" style="background:#007bff;">Сохранить на сервер</button>
       </div>
@@ -861,6 +862,25 @@
       toggleVisualEditor(ev.target.checked);
     });
   }
+
+  document.getElementById('adminCopyJsonBtn').onclick = async () => {
+    try {
+      const text = document.getElementById('adminJson').value || JSON.stringify(buildCatalogJsonFromCategories(), null, 2);
+      await navigator.clipboard.writeText(text);
+      tg.showPopup?.({
+        title: "Скопировано",
+        message: "Каталог скопирован в буфер обмена",
+        buttons: [{ type: 'ok' }],
+      });
+    } catch (e) {
+      console.error(e);
+      tg.showPopup?.({
+        title: "Ошибка",
+        message: "Не удалось скопировать JSON. Скопируйте вручную.",
+        buttons: [{ type: 'ok' }],
+      });
+    }
+  };
 
   // Инициализация происходит после загрузки каталога (см. выше)
 </script>
