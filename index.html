@@ -4,6 +4,16 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>1</title>
+  <script>
+    window.CATALOG_URL =
+      window.CATALOG_URL ||
+      "https://s3.twcstorage.ru/e684b5bb-10ea26bd-4410-4ff9-919f-78cb4188f3da/catalog.json";
+    window.IMAGE_UPLOAD_URL =
+      window.IMAGE_UPLOAD_URL ||
+      (window.location.origin && window.location.origin !== "null"
+        ? `${window.location.origin}/api/images`
+        : "");
+  </script>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root { --bg:#fff; --accent:#000; --gray:#f8f8f8; }
@@ -232,25 +242,61 @@
     });
   }
 
+  async function fileToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function uploadImageFile(file) {
+    if (!window.IMAGE_UPLOAD_URL) {
+      throw new Error("IMAGE_UPLOAD_URL is not defined");
+    }
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch(window.IMAGE_UPLOAD_URL, {
+      method: "POST",
+      body: formData,
+    });
+    if (!res.ok) {
+      throw new Error("HTTP " + res.status);
+    }
+    const data = await res.json();
+    if (!data?.url) {
+      throw new Error("Не удалось получить ссылку на изображение");
+    }
+    return data.url;
+  }
+
   function requestGalleryImage(resultCallback) {
-    galleryInput.onchange = (ev) => {
+    galleryInput.onchange = async (ev) => {
       const file = ev.target.files?.[0];
       if (!file) {
         galleryInput.value = '';
         return;
       }
-      const reader = new FileReader();
-      reader.onload = async () => {
-        try {
-          const optimized = await optimizeImageDataUrl(String(reader.result));
+      try {
+        if (window.IMAGE_UPLOAD_URL) {
+          const uploadedUrl = await uploadImageFile(file);
+          resultCallback(uploadedUrl);
+        } else {
+          const raw = await fileToDataUrl(file);
+          const optimized = await optimizeImageDataUrl(raw);
           resultCallback(optimized);
-        } catch (e) {
-          resultCallback(reader.result);
-        } finally {
-          galleryInput.value = '';
         }
-      };
-      reader.readAsDataURL(file);
+      } catch (err) {
+        console.error("Не удалось загрузить изображение", err);
+        tg.showPopup?.({
+          title: "Ошибка",
+          message: "Не удалось загрузить изображение. Попробуйте снова.",
+          buttons: [{ type: "ok" }],
+        });
+      } finally {
+        galleryInput.value = '';
+      }
     };
     galleryInput.click();
   }
